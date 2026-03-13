@@ -47,6 +47,7 @@ GameObject:
   - component: {fileID: 2328453720101597362}
   - component: {fileID: 7214954021724684150}
   - component: {fileID: 7925438235261398840}
+  - component: {fileID: 4989837296198177140}
   m_Layer: 0
   m_Name: shotgun enemy
   m_TagString: Enemy
@@ -219,6 +220,9 @@ MonoBehaviour:
   firePoint: {fileID: 4289837067083866728}
   pelletCount: 15
   spreadAngle: 10
+  maxAmmo: 6
+  reloadTime: 2
+  isReloading: 0
   viewAngle: 120
   viewDistance: 25
   lineOfSightMask:
@@ -231,6 +235,22 @@ MonoBehaviour:
   biasDecayRate: 0.1
   alertRadius: 18
   isAlerted: 0
+--- !u!114 &4989837296198177140
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5757930344421366471}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 67827d934d100244a8d686d70b6d52ab, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxAmmo: 10
+  reloadTime: 2
+  currentAmmo: 0
+  isReloading: 0
 --- !u!1 &6016700594283936590
 GameObject:
   m_ObjectHideFlags: 0

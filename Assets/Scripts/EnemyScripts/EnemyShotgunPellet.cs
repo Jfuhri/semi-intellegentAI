@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.AI;
 
+[RequireComponent(typeof(ReloadSystem))]
 public class EnemyShotgunAndMove : MonoBehaviour
 {
     [Header("Combat")]
@@ -36,6 +37,8 @@ public class EnemyShotgunAndMove : MonoBehaviour
     private bool isPatrolling = true;
     private Vector3 lastKnownPlayerPosition;
 
+    private ReloadSystem reloadSystem;
+
     void OnEnable() => GlobalEventManager.OnGunshot += HandleGunshot;
     void OnDisable() => GlobalEventManager.OnGunshot -= HandleGunshot;
 
@@ -43,6 +46,11 @@ public class EnemyShotgunAndMove : MonoBehaviour
     {
         player = GameObject.FindGameObjectWithTag("Player")?.transform;
         agent = GetComponent<NavMeshAgent>();
+        reloadSystem = GetComponent<ReloadSystem>();
+
+        if (reloadSystem == null)
+            Debug.LogWarning($"{name} has no ReloadSystem attached!");
+
         lastKnownPlayerPosition = transform.position;
         SetNewPatrolPoint();
     }
@@ -54,6 +62,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
         patrolBiasWeight = Mathf.Max(0f, patrolBiasWeight - biasDecayRate * Time.deltaTime);
         float distance = Vector3.Distance(transform.position, player.position);
 
+        // Player in range
         if (distance <= shootingRange && IsInFieldOfView() && HasLineOfSight())
         {
             if (!isAlerted)
@@ -67,12 +76,17 @@ public class EnemyShotgunAndMove : MonoBehaviour
             lastKnownPlayerPosition = player.position;
             patrolBiasWeight = 1f;
 
-            if (Time.time >= nextFireTime)
+            // Only shoot if ReloadSystem allows ammo
+            if (Time.time >= nextFireTime && reloadSystem != null && !reloadSystem.isReloading)
             {
-                ShootShotgun();
-                nextFireTime = Time.time + 1f / fireRate;
+                if (reloadSystem.TryConsumeAmmo())
+                {
+                    ShootShotgun();
+                    nextFireTime = Time.time + 1f / fireRate;
+                }
             }
         }
+        // Player seen but not in shooting range
         else if (IsInFieldOfView() && HasLineOfSight())
         {
             if (!isAlerted)
@@ -221,10 +235,14 @@ public class EnemyShotgunAndMove : MonoBehaviour
             isPatrolling = false;
         }
 
-        if (Time.time >= nextFireTime)
+        // Optional: shoot back after being hit
+        if (Time.time >= nextFireTime && reloadSystem != null && !reloadSystem.isReloading)
         {
-            ShootShotgun();
-            nextFireTime = Time.time + 1f / fireRate;
+            if (reloadSystem.TryConsumeAmmo())
+            {
+                ShootShotgun();
+                nextFireTime = Time.time + 1f / fireRate;
+            }
         }
     }
 

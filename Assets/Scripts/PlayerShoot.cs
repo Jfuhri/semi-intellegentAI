@@ -23,8 +23,17 @@ public class FirstPersonShooter : MonoBehaviour
         }
     }
 
+    private ReloadSystem reloadSystem;
+
+    void Start()
+    {
+        reloadSystem = GetComponent<ReloadSystem>();
+    }
+
     void Shoot()
     {
+        if (reloadSystem != null && !reloadSystem.TryConsumeAmmo()) return;
+
         // Instantiate bullet
         GameObject bullet = Instantiate(bulletPrefab, bulletSpawnPoint.position, Quaternion.identity);
 
@@ -46,4 +55,5 @@ public class FirstPersonShooter : MonoBehaviour
         // Broadcast the gunshot event with the source object
         GlobalEventManager.RaiseGunshot(transform.position, this);
     }
+
 }

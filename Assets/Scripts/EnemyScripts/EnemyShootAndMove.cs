@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.AI;
 using System.Collections.Generic;
 
+[RequireComponent(typeof(ReloadSystem))]
 public class EnemyShootAndMove : MonoBehaviour
 {
     [Header("Combat")]
@@ -34,20 +35,20 @@ public class EnemyShootAndMove : MonoBehaviour
     private bool isPatrolling = true;
     private Vector3 lastKnownPlayerPosition;
 
-    void OnEnable()
-    {
-        GlobalEventManager.OnGunshot += HandleGunshot;
-    }
+    private ReloadSystem reloadSystem;
 
-    void OnDisable()
-    {
-        GlobalEventManager.OnGunshot -= HandleGunshot;
-    }
+    void OnEnable() => GlobalEventManager.OnGunshot += HandleGunshot;
+    void OnDisable() => GlobalEventManager.OnGunshot -= HandleGunshot;
 
     void Start()
     {
         player = GameObject.FindGameObjectWithTag("Player")?.transform;
         agent = GetComponent<NavMeshAgent>();
+        reloadSystem = GetComponent<ReloadSystem>();
+
+        if (reloadSystem == null)
+            Debug.LogWarning($"{name} has no ReloadSystem attached!");
+
         lastKnownPlayerPosition = transform.position;
         SetNewPatrolPoint();
     }
@@ -68,10 +69,13 @@ public class EnemyShootAndMove : MonoBehaviour
 
             BroadcastToNearbyAllies(lastKnownPlayerPosition);
 
-            if (Time.time >= nextFireTime)
+            if (Time.time >= nextFireTime && reloadSystem != null && !reloadSystem.isReloading)
             {
-                Shoot();
-                nextFireTime = Time.time + 1f / fireRate;
+                if (reloadSystem.TryConsumeAmmo())
+                {
+                    Shoot();
+                    nextFireTime = Time.time + 1f / fireRate;
+                }
             }
         }
         else if (IsInFieldOfView() && HasLineOfSight())
@@ -150,9 +154,7 @@ public class EnemyShootAndMove : MonoBehaviour
             patrolBiasWeight = Mathf.Clamp01(patrolBiasWeight);
 
             if (isPatrolling)
-            {
                 SetNewPatrolPoint();
-            }
         }
     }
 
@@ -165,10 +167,10 @@ public class EnemyShootAndMove : MonoBehaviour
 
         BroadcastToNearbyAllies(hitOrigin);
 
-        if (player != null)
+        if (player != null && reloadSystem != null && !reloadSystem.isReloading)
         {
             FacePlayer();
-            if (Time.time >= nextFireTime)
+            if (Time.time >= nextFireTime && reloadSystem.TryConsumeAmmo())
             {
                 Shoot();
                 nextFireTime = Time.time + 1f / fireRate;
@@ -187,7 +189,6 @@ public class EnemyShootAndMove : MonoBehaviour
                 if (ally != null)
                 {
                     ally.ReceiveBackupCall(targetPosition);
-                    Debug.Log($"{name} broadcasted to {ally.name} about player at {targetPosition}");
                 }
             }
         }
@@ -199,7 +200,6 @@ public class EnemyShootAndMove : MonoBehaviour
         patrolBiasWeight = 1f;
         isPatrolling = true;
         SetNewPatrolPoint();
-        Debug.Log($"{name} received backup call and is moving toward {targetPosition}");
     }
 
     bool HasLineOfSight()

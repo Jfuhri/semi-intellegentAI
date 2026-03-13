@@ -109,6 +109,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 6e9def8d3026b9741b10ae42ec9b31ae, type: 3}
       insertIndex: -1
       addedObject: {fileID: 8285176812079402582}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 6e9def8d3026b9741b10ae42ec9b31ae, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 8747842157591615367}
   m_SourcePrefab: {fileID: 100100000, guid: 6e9def8d3026b9741b10ae42ec9b31ae, type: 3}
 --- !u!1 &3551031870909652793 stripped
 GameObject:
@@ -134,6 +137,23 @@ MonoBehaviour:
   shootCooldown: 0.15
   isAutomatic: 1
   muzzleFlashSpawner: {fileID: 0}
+--- !u!114 &8747842157591615367
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3551031870909652793}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: da0c1cfe9343587428d159b68abc5b39, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  magazineSize: 8
+  currentAmmo: 8
+  reloadTime: 2
+  infiniteAmmo: 0
+  isReloading: 0
 --- !u!4 &4182748943351367043 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 6e9def8d3026b9741b10ae42ec9b31ae, type: 3}
