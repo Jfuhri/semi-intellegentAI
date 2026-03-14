@@ -225,9 +225,12 @@ public class EnemyShotgunAndMove : MonoBehaviour
         }
     }
 
+    // <-- REINTEGRATED ONHITBYPLAYER
     public void OnHitByPlayer(Vector3 hitDirection)
     {
+        // Move away slightly when hit
         Vector3 evadeTarget = transform.position + hitDirection.normalized * 5f;
+
         if (NavMesh.SamplePosition(evadeTarget, out NavMeshHit hit, 5f, NavMesh.AllAreas))
         {
             agent.SetDestination(hit.position);
@@ -235,7 +238,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
             isPatrolling = false;
         }
 
-        // Optional: shoot back after being hit
+        // Optional: shoot back if possible
         if (Time.time >= nextFireTime && reloadSystem != null && !reloadSystem.isReloading)
         {
             if (reloadSystem.TryConsumeAmmo())
