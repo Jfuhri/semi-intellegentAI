@@ -1,55 +1,47 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public class Health : MonoBehaviour
 {
     [Header("Health Settings")]
     public float maxHealth = 100f;
-    private float currentHealth;
+    public float CurrentHealth;
 
-    void Start()
-    {
-        currentHealth = maxHealth;
-    }
+    void Start() => CurrentHealth = maxHealth;
 
     public void TakeDamage(float amount, Vector3 hitOrigin)
     {
-        currentHealth -= amount;
+        CurrentHealth -= amount;
+        CurrentHealth = Mathf.Clamp(CurrentHealth, 0f, maxHealth);
 
-        // If it's not the player, notify any enemy AI script
         if (!CompareTag("Player"))
         {
             var shooterAI = GetComponent<EnemyShootAndMove>();
             if (shooterAI != null)
-            {
                 shooterAI.OnHitByPlayer(hitOrigin);
-            }
 
             var shotgunAI = GetComponent<EnemyShotgunAndMove>();
             if (shotgunAI != null)
-            {
                 shotgunAI.OnHitByPlayer(hitOrigin);
-            }
         }
 
-        if (currentHealth <= 0)
-        {
+        if (CurrentHealth <= 0)
             Die();
-        }
+    }
+
+    public void TakeHeal(float amount)
+    {
+        CurrentHealth += amount;
+        CurrentHealth = Mathf.Clamp(CurrentHealth, 0f, maxHealth);
     }
 
     private void Die()
     {
         if (CompareTag("Player"))
-        {
-            SceneManager.LoadScene("GameOver");
-        }
+            UnityEngine.SceneManagement.SceneManager.LoadScene("GameOver");
         else
-        {
             Destroy(gameObject);
-        }
     }
 
-    public float GetHealth() => currentHealth;
+    public float GetHealth() => CurrentHealth;
     public float GetMaxHealth() => maxHealth;
 }

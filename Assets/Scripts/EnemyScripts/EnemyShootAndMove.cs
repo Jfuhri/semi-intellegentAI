@@ -27,6 +27,10 @@ public class EnemyShootAndMove : MonoBehaviour
     [Header("Backup System")]
     public float allyBroadcastRadius = 20f;
 
+    [Header("Healer System")]
+    public float healRequestThreshold = 40f; // call for healer if health drops below this
+    public float healerBroadcastRadius = 20f;
+
     private Transform player;
     private NavMeshAgent agent;
     private float nextFireTime;
@@ -34,8 +38,9 @@ public class EnemyShootAndMove : MonoBehaviour
     private Vector3 currentPatrolTarget;
     private bool isPatrolling = true;
     private Vector3 lastKnownPlayerPosition;
-
     private ReloadSystem reloadSystem;
+
+    private Health healthComponent;
 
     void OnEnable() => GlobalEventManager.OnGunshot += HandleGunshot;
     void OnDisable() => GlobalEventManager.OnGunshot -= HandleGunshot;
@@ -45,9 +50,12 @@ public class EnemyShootAndMove : MonoBehaviour
         player = GameObject.FindGameObjectWithTag("Player")?.transform;
         agent = GetComponent<NavMeshAgent>();
         reloadSystem = GetComponent<ReloadSystem>();
+        healthComponent = GetComponent<Health>();
 
         if (reloadSystem == null)
             Debug.LogWarning($"{name} has no ReloadSystem attached!");
+        if (healthComponent == null)
+            Debug.LogWarning($"{name} has no Health component attached!");
 
         lastKnownPlayerPosition = transform.position;
         SetNewPatrolPoint();
@@ -92,6 +100,89 @@ public class EnemyShootAndMove : MonoBehaviour
         {
             PatrolBehavior();
         }
+    }
+
+    public void OnHitByPlayer(Vector3 hitOrigin)
+    {
+        lastKnownPlayerPosition = hitOrigin;
+        patrolBiasWeight = 1f;
+        isPatrolling = true;
+        SetNewPatrolPoint();
+
+        BroadcastToNearbyAllies(hitOrigin);
+
+        // New: broadcast heal request if health is low
+        if (healthComponent != null && healthComponent.CurrentHealth <= healRequestThreshold)
+        {
+            BroadcastHealRequest();
+        }
+
+        if (player != null && reloadSystem != null && !reloadSystem.isReloading)
+        {
+            FacePlayer();
+            if (Time.time >= nextFireTime && reloadSystem.TryConsumeAmmo())
+            {
+                Shoot();
+                nextFireTime = Time.time + 1f / fireRate;
+            }
+        }
+    }
+
+    void BroadcastToNearbyAllies(Vector3 targetPosition)
+    {
+        Collider[] hitColliders = Physics.OverlapSphere(transform.position, allyBroadcastRadius);
+        foreach (var col in hitColliders)
+        {
+            if (col.gameObject != this.gameObject && col.CompareTag("Enemy"))
+            {
+                EnemyShootAndMove ally = col.GetComponent<EnemyShootAndMove>();
+                if (ally != null)
+                {
+                    ally.ReceiveBackupCall(targetPosition);
+                }
+            }
+        }
+    }
+
+    void BroadcastHealRequest()
+    {
+        Collider[] hitColliders = Physics.OverlapSphere(transform.position, healerBroadcastRadius);
+        foreach (var col in hitColliders)
+        {
+            if (col.CompareTag("Enemy"))
+            {
+                HealerEnemy healer = col.GetComponent<HealerEnemy>();
+                if (healer != null)
+                {
+                    healer.ReceiveHealRequest(this.gameObject);
+                }
+            }
+        }
+    }
+
+    public void ReceiveBackupCall(Vector3 targetPosition)
+    {
+        lastKnownPlayerPosition = targetPosition;
+        patrolBiasWeight = 1f;
+        isPatrolling = true;
+        SetNewPatrolPoint();
+    }
+
+    bool HasLineOfSight()
+    {
+        Vector3 direction = (player.position + Vector3.up * 1f) - firePoint.position;
+        if (Physics.Raycast(firePoint.position, direction.normalized, out RaycastHit hit, viewDistance, lineOfSightMask))
+        {
+            return hit.transform.CompareTag("Player");
+        }
+        return false;
+    }
+
+    bool IsInFieldOfView()
+    {
+        Vector3 directionToPlayer = player.position - transform.position;
+        float angle = Vector3.Angle(transform.forward, directionToPlayer);
+        return angle <= viewAngle / 2f && directionToPlayer.magnitude <= viewDistance;
     }
 
     void PatrolBehavior()
@@ -158,67 +249,6 @@ public class EnemyShootAndMove : MonoBehaviour
         }
     }
 
-    public void OnHitByPlayer(Vector3 hitOrigin)
-    {
-        lastKnownPlayerPosition = hitOrigin;
-        patrolBiasWeight = 1f;
-        isPatrolling = true;
-        SetNewPatrolPoint();
-
-        BroadcastToNearbyAllies(hitOrigin);
-
-        if (player != null && reloadSystem != null && !reloadSystem.isReloading)
-        {
-            FacePlayer();
-            if (Time.time >= nextFireTime && reloadSystem.TryConsumeAmmo())
-            {
-                Shoot();
-                nextFireTime = Time.time + 1f / fireRate;
-            }
-        }
-    }
-
-    void BroadcastToNearbyAllies(Vector3 targetPosition)
-    {
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, allyBroadcastRadius);
-        foreach (var col in hitColliders)
-        {
-            if (col.gameObject != this.gameObject && col.CompareTag("Enemy"))
-            {
-                EnemyShootAndMove ally = col.GetComponent<EnemyShootAndMove>();
-                if (ally != null)
-                {
-                    ally.ReceiveBackupCall(targetPosition);
-                }
-            }
-        }
-    }
-
-    public void ReceiveBackupCall(Vector3 targetPosition)
-    {
-        lastKnownPlayerPosition = targetPosition;
-        patrolBiasWeight = 1f;
-        isPatrolling = true;
-        SetNewPatrolPoint();
-    }
-
-    bool HasLineOfSight()
-    {
-        Vector3 direction = (player.position + Vector3.up * 1f) - firePoint.position;
-        if (Physics.Raycast(firePoint.position, direction.normalized, out RaycastHit hit, viewDistance, lineOfSightMask))
-        {
-            return hit.transform.CompareTag("Player");
-        }
-        return false;
-    }
-
-    bool IsInFieldOfView()
-    {
-        Vector3 directionToPlayer = player.position - transform.position;
-        float angle = Vector3.Angle(transform.forward, directionToPlayer);
-        return angle <= viewAngle / 2f && directionToPlayer.magnitude <= viewDistance;
-    }
-
     void FacePlayer()
     {
         Vector3 direction = (player.position - transform.position).normalized;
@@ -246,5 +276,8 @@ public class EnemyShootAndMove : MonoBehaviour
 
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, allyBroadcastRadius);
+
+        Gizmos.color = Color.green;
+        Gizmos.DrawWireSphere(transform.position, healerBroadcastRadius);
     }
 }
