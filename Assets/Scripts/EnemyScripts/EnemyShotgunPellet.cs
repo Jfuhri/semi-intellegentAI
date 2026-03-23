@@ -29,13 +29,13 @@ public class EnemyShotgunAndMove : MonoBehaviour
     public float alertRadius = 15f;
     public bool isAlerted = false;
 
-    private Transform player;
+    private Transform target;
     private NavMeshAgent agent;
     private float nextFireTime;
     private float patrolWaitTimer;
     private Vector3 currentPatrolTarget;
     private bool isPatrolling = true;
-    private Vector3 lastKnownPlayerPosition;
+    private Vector3 lastKnownTargetPosition;
 
     private ReloadSystem reloadSystem;
 
@@ -44,25 +44,34 @@ public class EnemyShotgunAndMove : MonoBehaviour
 
     void Start()
     {
-        player = GameObject.FindGameObjectWithTag("Player")?.transform;
+        // Find Player or PlayerBot
+        GameObject targetObj = GameObject.FindGameObjectWithTag("Player")
+            ?? GameObject.FindGameObjectWithTag("PlayerBot");
+        target = targetObj?.transform;
+
         agent = GetComponent<NavMeshAgent>();
         reloadSystem = GetComponent<ReloadSystem>();
 
         if (reloadSystem == null)
             Debug.LogWarning($"{name} has no ReloadSystem attached!");
 
-        lastKnownPlayerPosition = transform.position;
+        lastKnownTargetPosition = transform.position;
         SetNewPatrolPoint();
+    }
+
+    // Unified check for player/bot tags
+    bool IsTargetTag(GameObject obj)
+    {
+        return obj.CompareTag("Player") || obj.CompareTag("PlayerBot");
     }
 
     void Update()
     {
-        if (player == null) return;
+        if (target == null) return;
 
         patrolBiasWeight = Mathf.Max(0f, patrolBiasWeight - biasDecayRate * Time.deltaTime);
-        float distance = Vector3.Distance(transform.position, player.position);
+        float distance = Vector3.Distance(transform.position, target.position);
 
-        // Player in range
         if (distance <= shootingRange && IsInFieldOfView() && HasLineOfSight())
         {
             if (!isAlerted)
@@ -72,11 +81,10 @@ public class EnemyShotgunAndMove : MonoBehaviour
             }
 
             agent.isStopped = true;
-            FacePlayer();
-            lastKnownPlayerPosition = player.position;
+            FaceTarget();
+            lastKnownTargetPosition = target.position;
             patrolBiasWeight = 1f;
 
-            // Only shoot if ReloadSystem allows ammo
             if (Time.time >= nextFireTime && reloadSystem != null && !reloadSystem.isReloading)
             {
                 if (reloadSystem.TryConsumeAmmo())
@@ -86,7 +94,6 @@ public class EnemyShotgunAndMove : MonoBehaviour
                 }
             }
         }
-        // Player seen but not in shooting range
         else if (IsInFieldOfView() && HasLineOfSight())
         {
             if (!isAlerted)
@@ -96,8 +103,8 @@ public class EnemyShotgunAndMove : MonoBehaviour
             }
 
             agent.isStopped = false;
-            agent.SetDestination(player.position);
-            lastKnownPlayerPosition = player.position;
+            agent.SetDestination(target.position);
+            lastKnownTargetPosition = target.position;
             patrolBiasWeight = 1f;
             isPatrolling = false;
         }
@@ -131,7 +138,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
 
     void SetNewPatrolPoint()
     {
-        Vector3 basePoint = Vector3.Lerp(transform.position, lastKnownPlayerPosition, patrolBiasWeight);
+        Vector3 basePoint = Vector3.Lerp(transform.position, lastKnownTargetPosition, patrolBiasWeight);
         Vector3 randomOffset = Random.insideUnitSphere * patrolRadius * (1f - patrolBiasWeight);
         randomOffset.y = 0f;
         Vector3 candidatePoint = basePoint + randomOffset;
@@ -143,13 +150,15 @@ public class EnemyShotgunAndMove : MonoBehaviour
         }
     }
 
-    void HandleGunshot(Vector3 position, Object source)
+    // Reacts to gunshots from Player or PlayerBot
+    void HandleGunshot(Vector3 gunshotPosition, Object source)
     {
-        if (source == this) return;
+        GameObject sourceObj = source as GameObject;
+        if (sourceObj == null || !IsTargetTag(sourceObj)) return;
 
-        if (Vector3.Distance(transform.position, position) <= hearingRange)
+        if (Vector3.Distance(transform.position, gunshotPosition) <= hearingRange)
         {
-            lastKnownPlayerPosition = position;
+            lastKnownTargetPosition = gunshotPosition;
             patrolBiasWeight += biasIncreasePerShot;
             patrolBiasWeight = Mathf.Clamp01(patrolBiasWeight);
 
@@ -170,7 +179,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
             Instantiate(pelletPrefab, firePoint.position, Quaternion.LookRotation(shootDirection));
         }
 
-        GlobalEventManager.RaiseGunshot(transform.position, this);
+        GlobalEventManager.RaiseGunshot(transform.position, this.gameObject);
     }
 
     void AlertNearbyAllies()
@@ -183,40 +192,39 @@ public class EnemyShotgunAndMove : MonoBehaviour
                 EnemyShotgunAndMove allyAI = ally.GetComponent<EnemyShotgunAndMove>();
                 if (allyAI != null && !allyAI.isAlerted)
                 {
-                    allyAI.OnAlerted(player.position);
+                    allyAI.OnAlerted(lastKnownTargetPosition);
                 }
             }
         }
     }
 
-    public void OnAlerted(Vector3 playerPosition)
+    public void OnAlerted(Vector3 targetPosition)
     {
         isAlerted = true;
-        lastKnownPlayerPosition = playerPosition;
+        lastKnownTargetPosition = targetPosition;
         isPatrolling = false;
-        Debug.Log($"{gameObject.name} is alerted by ally!");
     }
 
     bool HasLineOfSight()
     {
-        Vector3 direction = (player.position + Vector3.up * 1f) - firePoint.position;
+        Vector3 direction = (target.position + Vector3.up * 1f) - firePoint.position;
         if (Physics.Raycast(firePoint.position, direction.normalized, out RaycastHit hit, viewDistance, lineOfSightMask))
         {
-            return hit.transform.CompareTag("Player");
+            return IsTargetTag(hit.transform.gameObject);
         }
         return false;
     }
 
     bool IsInFieldOfView()
     {
-        Vector3 directionToPlayer = player.position - transform.position;
-        float angle = Vector3.Angle(transform.forward, directionToPlayer);
-        return angle <= viewAngle / 2f && directionToPlayer.magnitude <= viewDistance;
+        Vector3 directionToTarget = target.position - transform.position;
+        float angle = Vector3.Angle(transform.forward, directionToTarget);
+        return angle <= viewAngle / 2f && directionToTarget.magnitude <= viewDistance;
     }
 
-    void FacePlayer()
+    void FaceTarget()
     {
-        Vector3 direction = (player.position - transform.position).normalized;
+        Vector3 direction = (target.position - transform.position).normalized;
         direction.y = 0f;
         if (direction.sqrMagnitude > 0.01f)
         {
@@ -225,17 +233,20 @@ public class EnemyShotgunAndMove : MonoBehaviour
         }
     }
 
-    public void OnHitByPlayer(Vector3 hitDirection)
+    // Unified reaction for Player and PlayerBot hits
+    public void OnHitByPlayer(Vector3 hitDirection, string sourceTag = "Player")
     {
-        Vector3 evadeTarget = transform.position + hitDirection.normalized * 5f;
-        if (NavMesh.SamplePosition(evadeTarget, out NavMeshHit hit, 5f, NavMesh.AllAreas))
+        if (!(sourceTag == "Player" || sourceTag == "PlayerBot")) return;
+
+        lastKnownTargetPosition = transform.position + hitDirection.normalized * 5f;
+
+        if (NavMesh.SamplePosition(lastKnownTargetPosition, out NavMeshHit hit, 5f, NavMesh.AllAreas))
         {
             agent.SetDestination(hit.position);
             agent.isStopped = false;
             isPatrolling = false;
         }
 
-        // Optional: shoot back after being hit
         if (Time.time >= nextFireTime && reloadSystem != null && !reloadSystem.isReloading)
         {
             if (reloadSystem.TryConsumeAmmo())
