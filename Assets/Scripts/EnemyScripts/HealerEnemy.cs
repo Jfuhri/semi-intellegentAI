@@ -1,7 +1,9 @@
 using UnityEngine;
 using UnityEngine.AI;
+using System.Collections;
 
 [RequireComponent(typeof(ReloadSystem))]
+[RequireComponent(typeof(LineRenderer))] // add LineRenderer component
 public class HealerEnemy : MonoBehaviour
 {
     [Header("Combat")]
@@ -33,7 +35,7 @@ public class HealerEnemy : MonoBehaviour
     public float allyBroadcastRadius = 20f;
 
     [Header("Healing Requests")]
-    public float healerResponseRadius = 30f; // max distance to respond
+    public float healerResponseRadius = 30f;
     private GameObject currentHealTarget;
 
     private Transform player;
@@ -45,6 +47,8 @@ public class HealerEnemy : MonoBehaviour
     private Vector3 lastKnownPlayerPosition;
     private ReloadSystem reloadSystem;
 
+    private LineRenderer lineRenderer;
+
     void OnEnable() => GlobalEventManager.OnGunshot += HandleGunshot;
     void OnDisable() => GlobalEventManager.OnGunshot -= HandleGunshot;
 
@@ -53,9 +57,13 @@ public class HealerEnemy : MonoBehaviour
         player = GameObject.FindGameObjectWithTag("Player")?.transform;
         agent = GetComponent<NavMeshAgent>();
         reloadSystem = GetComponent<ReloadSystem>();
+        lineRenderer = GetComponent<LineRenderer>();
 
-        if (reloadSystem == null)
-            Debug.LogWarning($"{name} has no ReloadSystem attached!");
+        if (lineRenderer != null)
+        {
+            lineRenderer.positionCount = 2;
+            lineRenderer.enabled = false; // start disabled
+        }
 
         lastKnownPlayerPosition = transform.position;
         SetNewPatrolPoint();
@@ -101,18 +109,6 @@ public class HealerEnemy : MonoBehaviour
         }
     }
 
-    public void ReceiveHealRequest(GameObject injuredAlly)
-    {
-        if (injuredAlly == null) return;
-
-        // Only respond if within range
-        if (Vector3.Distance(transform.position, injuredAlly.transform.position) <= healerResponseRadius)
-        {
-            currentHealTarget = injuredAlly;
-            agent.SetDestination(injuredAlly.transform.position);
-        }
-    }
-
     void HealLowestHealthAlly()
     {
         GameObject target = currentHealTarget;
@@ -144,9 +140,39 @@ public class HealerEnemy : MonoBehaviour
             if (allyHealth != null)
             {
                 allyHealth.TakeHeal(healAmount);
+                StartCoroutine(ShowHealingBeam(target.transform)); // show beam
                 currentHealTarget = null; // reset after healing
-                                          // Optional: spawn VFX/SFX
             }
+        }
+    }
+
+    IEnumerator ShowHealingBeam(Transform target)
+    {
+        if (lineRenderer == null || target == null) yield break;
+
+        float duration = 0.5f; // beam lasts 0.5 seconds
+        float timer = 0f;
+
+        lineRenderer.enabled = true;
+        while (timer < duration)
+        {
+            lineRenderer.SetPosition(0, transform.position + Vector3.up * 1f); // healer position
+            lineRenderer.SetPosition(1, target.position + Vector3.up * 1f);     // ally position
+            timer += Time.deltaTime;
+            yield return null;
+        }
+
+        lineRenderer.enabled = false;
+    }
+
+    public void ReceiveHealRequest(GameObject injuredAlly)
+    {
+        if (injuredAlly == null) return;
+
+        if (Vector3.Distance(transform.position, injuredAlly.transform.position) <= healerResponseRadius)
+        {
+            currentHealTarget = injuredAlly;
+            agent.SetDestination(injuredAlly.transform.position);
         }
     }
 
