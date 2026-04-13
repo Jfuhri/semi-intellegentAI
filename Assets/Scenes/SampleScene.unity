@@ -57779,7 +57779,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1911469630259401626, guid: f053fb34172289d42aedc16548faf09e, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7933666260730543213, guid: f053fb34172289d42aedc16548faf09e, type: 3}
       propertyPath: m_LocalPosition.x
@@ -65063,7 +65063,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1911469630259401626, guid: f053fb34172289d42aedc16548faf09e, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7933666260730543213, guid: f053fb34172289d42aedc16548faf09e, type: 3}
       propertyPath: m_LocalPosition.x
@@ -65165,7 +65165,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3102963507332602382, guid: ecadae72896427742be3719df4ba96d0, type: 3}
       propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6220385480664049156, guid: ecadae72896427742be3719df4ba96d0, type: 3}
+      propertyPath: m_Parameters.widthCurve.m_Curve.Array.data[0].time
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6220385480664049156, guid: ecadae72896427742be3719df4ba96d0, type: 3}
+      propertyPath: m_Parameters.widthCurve.m_Curve.Array.data[0].value
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
