@@ -44,10 +44,10 @@ public class EnemyShotgunAndMove : MonoBehaviour
 
     void Start()
     {
-        // Find Player or PlayerBot
         GameObject targetObj = GameObject.FindGameObjectWithTag("Player")
             ?? GameObject.FindGameObjectWithTag("PlayerBot");
-        target = targetObj?.transform;
+
+        target = targetObj != null ? targetObj.transform : null;
 
         agent = GetComponent<NavMeshAgent>();
         reloadSystem = GetComponent<ReloadSystem>();
@@ -59,10 +59,9 @@ public class EnemyShotgunAndMove : MonoBehaviour
         SetNewPatrolPoint();
     }
 
-    // Unified check for player/bot tags
     bool IsTargetTag(GameObject obj)
     {
-        return obj.CompareTag("Player") || obj.CompareTag("PlayerBot");
+        return obj != null && (obj.CompareTag("Player") || obj.CompareTag("PlayerBot"));
     }
 
     void Update()
@@ -70,6 +69,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
         if (target == null) return;
 
         patrolBiasWeight = Mathf.Max(0f, patrolBiasWeight - biasDecayRate * Time.deltaTime);
+
         float distance = Vector3.Distance(transform.position, target.position);
 
         if (distance <= shootingRange && IsInFieldOfView() && HasLineOfSight())
@@ -82,6 +82,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
 
             agent.isStopped = true;
             FaceTarget();
+
             lastKnownTargetPosition = target.position;
             patrolBiasWeight = 1f;
 
@@ -104,6 +105,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
 
             agent.isStopped = false;
             agent.SetDestination(target.position);
+
             lastKnownTargetPosition = target.position;
             patrolBiasWeight = 1f;
             isPatrolling = false;
@@ -141,20 +143,19 @@ public class EnemyShotgunAndMove : MonoBehaviour
         Vector3 basePoint = Vector3.Lerp(transform.position, lastKnownTargetPosition, patrolBiasWeight);
         Vector3 randomOffset = Random.insideUnitSphere * patrolRadius * (1f - patrolBiasWeight);
         randomOffset.y = 0f;
-        Vector3 candidatePoint = basePoint + randomOffset;
 
-        if (NavMesh.SamplePosition(candidatePoint, out NavMeshHit hit, patrolRadius, NavMesh.AllAreas))
+        Vector3 candidate = basePoint + randomOffset;
+
+        if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, patrolRadius, NavMesh.AllAreas))
         {
             currentPatrolTarget = hit.position;
             agent.SetDestination(currentPatrolTarget);
         }
     }
 
-    // Reacts to gunshots from Player or PlayerBot
     void HandleGunshot(Vector3 gunshotPosition, Object source)
     {
-        GameObject sourceObj = source as GameObject;
-        if (sourceObj == null || !IsTargetTag(sourceObj)) return;
+        if (source is GameObject go && !IsTargetTag(go)) return;
 
         if (Vector3.Distance(transform.position, gunshotPosition) <= hearingRange)
         {
@@ -173,74 +174,81 @@ public class EnemyShotgunAndMove : MonoBehaviour
         {
             float hAngle = Random.Range(-spreadAngle / 2f, spreadAngle / 2f);
             float vAngle = Random.Range(-spreadAngle / 2f, spreadAngle / 2f);
-            Quaternion spreadRotation = Quaternion.Euler(vAngle, hAngle, 0f);
-            Vector3 shootDirection = spreadRotation * transform.forward;
 
-            Instantiate(pelletPrefab, firePoint.position, Quaternion.LookRotation(shootDirection));
+            Quaternion spread = Quaternion.Euler(vAngle, hAngle, 0f);
+            Vector3 dir = spread * transform.forward;
+
+            Instantiate(pelletPrefab, firePoint.position, Quaternion.LookRotation(dir));
         }
 
-        GlobalEventManager.RaiseGunshot(transform.position, this.gameObject);
+        GlobalEventManager.RaiseGunshot(transform.position, this);
     }
 
     void AlertNearbyAllies()
     {
         Collider[] allies = Physics.OverlapSphere(transform.position, alertRadius);
+
         foreach (Collider ally in allies)
         {
             if (ally.CompareTag("Enemy") && ally.gameObject != gameObject)
             {
-                EnemyShotgunAndMove allyAI = ally.GetComponent<EnemyShotgunAndMove>();
-                if (allyAI != null && !allyAI.isAlerted)
+                EnemyShotgunAndMove ai = ally.GetComponent<EnemyShotgunAndMove>();
+
+                if (ai != null && !ai.isAlerted)
                 {
-                    allyAI.OnAlerted(lastKnownTargetPosition);
+                    ai.OnAlerted(lastKnownTargetPosition);
                 }
             }
         }
     }
 
-    public void OnAlerted(Vector3 targetPosition)
+    public void OnAlerted(Vector3 pos)
     {
         isAlerted = true;
-        lastKnownTargetPosition = targetPosition;
+        lastKnownTargetPosition = pos;
         isPatrolling = false;
     }
 
     bool HasLineOfSight()
     {
-        Vector3 direction = (target.position + Vector3.up * 1f) - firePoint.position;
-        if (Physics.Raycast(firePoint.position, direction.normalized, out RaycastHit hit, viewDistance, lineOfSightMask))
+        Vector3 dir = (target.position + Vector3.up * 1f) - firePoint.position;
+
+        if (Physics.Raycast(firePoint.position, dir.normalized, out RaycastHit hit, viewDistance, lineOfSightMask))
         {
             return IsTargetTag(hit.transform.gameObject);
         }
+
         return false;
     }
 
     bool IsInFieldOfView()
     {
-        Vector3 directionToTarget = target.position - transform.position;
-        float angle = Vector3.Angle(transform.forward, directionToTarget);
-        return angle <= viewAngle / 2f && directionToTarget.magnitude <= viewDistance;
+        Vector3 toTarget = target.position - transform.position;
+        float angle = Vector3.Angle(transform.forward, toTarget);
+
+        return angle <= viewAngle / 2f && toTarget.magnitude <= viewDistance;
     }
 
     void FaceTarget()
     {
-        Vector3 direction = (target.position - transform.position).normalized;
-        direction.y = 0f;
-        if (direction.sqrMagnitude > 0.01f)
+        Vector3 dir = (target.position - transform.position).normalized;
+        dir.y = 0f;
+
+        if (dir.sqrMagnitude > 0.01f)
         {
-            Quaternion lookRotation = Quaternion.LookRotation(direction);
-            transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 10f);
+            Quaternion rot = Quaternion.LookRotation(dir);
+            transform.rotation = Quaternion.Slerp(transform.rotation, rot, Time.deltaTime * 10f);
         }
     }
 
-    // Unified reaction for Player and PlayerBot hits
+    // ✅ FIXED + SAFE HIT RESPONSE
     public void OnHitByPlayer(Vector3 hitDirection, string sourceTag = "Player")
     {
-        if (!(sourceTag == "Player" || sourceTag == "PlayerBot")) return;
+        if (!IsTargetTag(GameObject.FindWithTag(sourceTag))) return;
 
-        lastKnownTargetPosition = transform.position + hitDirection.normalized * 5f;
+        Vector3 evade = transform.position + hitDirection.normalized * 5f;
 
-        if (NavMesh.SamplePosition(lastKnownTargetPosition, out NavMeshHit hit, 5f, NavMesh.AllAreas))
+        if (NavMesh.SamplePosition(evade, out NavMeshHit hit, 5f, NavMesh.AllAreas))
         {
             agent.SetDestination(hit.position);
             agent.isStopped = false;
@@ -260,10 +268,11 @@ public class EnemyShotgunAndMove : MonoBehaviour
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.yellow;
-        Vector3 leftBoundary = Quaternion.Euler(0, -viewAngle / 2f, 0) * transform.forward;
-        Vector3 rightBoundary = Quaternion.Euler(0, viewAngle / 2f, 0) * transform.forward;
-        Gizmos.DrawRay(transform.position, leftBoundary * viewDistance);
-        Gizmos.DrawRay(transform.position, rightBoundary * viewDistance);
+        Vector3 left = Quaternion.Euler(0, -viewAngle / 2f, 0) * transform.forward;
+        Vector3 right = Quaternion.Euler(0, viewAngle / 2f, 0) * transform.forward;
+
+        Gizmos.DrawRay(transform.position, left * viewDistance);
+        Gizmos.DrawRay(transform.position, right * viewDistance);
 
         Gizmos.color = Color.cyan;
         Gizmos.DrawWireSphere(currentPatrolTarget, 1f);

@@ -27,9 +27,8 @@ public class EnemyShootAndMove : MonoBehaviour
     [Header("Backup System")]
     public float allyBroadcastRadius = 20f;
 
-    [Header("Healer System")]
-    public float healRequestThreshold = 40f; // call for healer if health drops below this
-    public float healerBroadcastRadius = 20f;
+    [Header("Tactical Healing")]
+    public float healRequestThreshold = 40f;
 
     private Transform target;
     private NavMeshAgent agent;
@@ -38,8 +37,10 @@ public class EnemyShootAndMove : MonoBehaviour
     private Vector3 currentPatrolTarget;
     private bool isPatrolling = true;
     private Vector3 lastKnownTargetPosition;
+
     private ReloadSystem reloadSystem;
     private Health healthComponent;
+    private SelfHealSystem selfHealSystem;
 
     void OnEnable() => GlobalEventManager.OnGunshot += HandleGunshot;
     void OnDisable() => GlobalEventManager.OnGunshot -= HandleGunshot;
@@ -50,17 +51,15 @@ public class EnemyShootAndMove : MonoBehaviour
         agent = GetComponent<NavMeshAgent>();
         reloadSystem = GetComponent<ReloadSystem>();
         healthComponent = GetComponent<Health>();
+        selfHealSystem = GetComponent<SelfHealSystem>();
 
         if (reloadSystem == null)
             Debug.LogWarning($"{name} has no ReloadSystem attached!");
-        if (healthComponent == null)
-            Debug.LogWarning($"{name} has no Health component attached!");
 
         lastKnownTargetPosition = transform.position;
         SetNewPatrolPoint();
     }
 
-    // Unified target detection for Player and PlayerBot
     Transform FindTarget()
     {
         GameObject targetObj = GameObject.FindGameObjectWithTag("Player")
@@ -78,7 +77,22 @@ public class EnemyShootAndMove : MonoBehaviour
         if (target == null) return;
 
         patrolBiasWeight = Mathf.Max(0f, patrolBiasWeight - biasDecayRate * Time.deltaTime);
+
         float distance = Vector3.Distance(transform.position, target.position);
+
+        // =========================
+        // SELF HEAL INTEGRATION
+        // =========================
+        if (selfHealSystem != null && selfHealSystem.ShouldHeal())
+        {
+            agent.isStopped = true;
+
+            if (!selfHealSystem.isActiveAndEnabled)
+                return;
+
+            StartCoroutine(selfHealSystem.HealRoutine());
+            return;
+        }
 
         if (distance <= shootingRange && IsInFieldOfView() && HasLineOfSight())
         {
@@ -114,23 +128,26 @@ public class EnemyShootAndMove : MonoBehaviour
         }
     }
 
-    public void OnHitByPlayer(Vector3 hitOrigin, string sourceTag = "Player")
+    // FIXED + SIMPLIFIED HIT RESPONSE
+    public void OnHitByPlayer(Vector3 hitOrigin)
     {
-        if (!IsTargetTag(new GameObject { tag = sourceTag })) return;
-
         lastKnownTargetPosition = hitOrigin;
         patrolBiasWeight = 1f;
         isPatrolling = true;
-        SetNewPatrolPoint();
 
+        SetNewPatrolPoint();
         BroadcastToNearbyAllies(hitOrigin);
 
-        if (healthComponent != null && healthComponent.CurrentHealth <= healRequestThreshold)
-            BroadcastHealRequest();
+        // trigger self heal logic indirectly (if low health system is active)
+        if (selfHealSystem != null && selfHealSystem.ShouldHeal())
+        {
+            StartCoroutine(selfHealSystem.HealRoutine());
+        }
 
         if (target != null && reloadSystem != null && !reloadSystem.isReloading)
         {
             FaceTarget();
+
             if (Time.time >= nextFireTime && reloadSystem.TryConsumeAmmo())
             {
                 Shoot();
@@ -142,27 +159,14 @@ public class EnemyShootAndMove : MonoBehaviour
     void BroadcastToNearbyAllies(Vector3 targetPosition)
     {
         Collider[] hitColliders = Physics.OverlapSphere(transform.position, allyBroadcastRadius);
+
         foreach (var col in hitColliders)
         {
-            if (col.gameObject != this.gameObject && col.CompareTag("Enemy"))
+            if (col.gameObject != gameObject && col.CompareTag("Enemy"))
             {
                 EnemyShootAndMove ally = col.GetComponent<EnemyShootAndMove>();
                 if (ally != null)
                     ally.ReceiveBackupCall(targetPosition);
-            }
-        }
-    }
-
-    void BroadcastHealRequest()
-    {
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, healerBroadcastRadius);
-        foreach (var col in hitColliders)
-        {
-            if (col.CompareTag("Enemy"))
-            {
-                HealerEnemy healer = col.GetComponent<HealerEnemy>();
-                if (healer != null)
-                    healer.ReceiveHealRequest(this.gameObject);
             }
         }
     }
@@ -177,11 +181,11 @@ public class EnemyShootAndMove : MonoBehaviour
 
     bool HasLineOfSight()
     {
-        Vector3 direction = (target.position + Vector3.up * 1f) - firePoint.position;
+        Vector3 direction = (target.position + Vector3.up) - firePoint.position;
+
         if (Physics.Raycast(firePoint.position, direction.normalized, out RaycastHit hit, viewDistance, lineOfSightMask))
-        {
             return IsTargetTag(hit.transform.gameObject);
-        }
+
         return false;
     }
 
@@ -206,6 +210,7 @@ public class EnemyShootAndMove : MonoBehaviour
         if (!agent.pathPending && agent.remainingDistance < 1f)
         {
             patrolWaitTimer += Time.deltaTime;
+
             if (patrolWaitTimer >= patrolWaitTime)
             {
                 SetNewPatrolPoint();
@@ -219,6 +224,7 @@ public class EnemyShootAndMove : MonoBehaviour
         Vector3 basePoint = Vector3.Lerp(transform.position, lastKnownTargetPosition, patrolBiasWeight);
         Vector3 randomOffset = Random.insideUnitSphere * patrolRadius * (1f - patrolBiasWeight);
         randomOffset.y = 0f;
+
         Vector3 candidatePoint = basePoint + randomOffset;
 
         if (NavMesh.SamplePosition(candidatePoint, out NavMeshHit hit, patrolRadius, NavMesh.AllAreas))
@@ -234,6 +240,7 @@ public class EnemyShootAndMove : MonoBehaviour
         {
             Vector3 direction = (target.position - firePoint.position).normalized;
             Quaternion lookRotation = Quaternion.LookRotation(direction);
+
             Instantiate(bulletPrefab, firePoint.position, lookRotation);
             GlobalEventManager.RaiseGunshot(firePoint.position, this);
         }
@@ -241,9 +248,7 @@ public class EnemyShootAndMove : MonoBehaviour
 
     void HandleGunshot(Vector3 gunshotPosition, Object source)
     {
-        // react to gunshots from Player or PlayerBot
-        GameObject sourceObj = source as GameObject;
-        if (sourceObj != null && !IsTargetTag(sourceObj) && source != this) return;
+        if (source == this) return;
 
         if (Vector3.Distance(transform.position, gunshotPosition) <= hearingRange)
         {
@@ -260,6 +265,7 @@ public class EnemyShootAndMove : MonoBehaviour
     {
         Vector3 direction = (target.position - transform.position).normalized;
         direction.y = 0f;
+
         if (direction != Vector3.zero)
         {
             Quaternion lookRotation = Quaternion.LookRotation(direction);
@@ -267,6 +273,9 @@ public class EnemyShootAndMove : MonoBehaviour
         }
     }
 
+    // =========================
+    // GIZMOS (UNCHANGED)
+    // =========================
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.yellow;
@@ -283,8 +292,5 @@ public class EnemyShootAndMove : MonoBehaviour
 
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, allyBroadcastRadius);
-
-        Gizmos.color = Color.green;
-        Gizmos.DrawWireSphere(transform.position, healerBroadcastRadius);
     }
 }
