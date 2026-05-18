@@ -49,6 +49,7 @@ GameObject:
   - component: {fileID: 7925438235261398840}
   - component: {fileID: 1089986109997215738}
   - component: {fileID: 8620251963175430610}
+  - component: {fileID: 4900931958465769178}
   m_Layer: 0
   m_Name: shotgun enemy
   m_TagString: Enemy
@@ -267,6 +268,28 @@ MonoBehaviour:
   healTime: 2
   healCooldown: 10
   healThresholdPercent: 35
+  maxHeals: 2
+--- !u!114 &4900931958465769178
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5757930344421366471}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: af0571ea0958fe046abec909cee03f4a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  searchRadius: 12
+  samplePoints: 18
+  minPlayerDistance: 4
+  lineOfSightMask:
+    serializedVersion: 2
+    m_Bits: 1
+  losWeight: 10
+  distanceWeight: 1
+  flankBias: 0.5
 --- !u!1 &6016700594283936590
 GameObject:
   m_ObjectHideFlags: 0

@@ -157,7 +157,8 @@ GameObject:
   - component: {fileID: 3655614859643248141}
   - component: {fileID: 3270102039105683753}
   - component: {fileID: 5327324377406808588}
-  - component: {fileID: 3972619707635490710}
+  - component: {fileID: 7140524969475486815}
+  - component: {fileID: 2003716159418889114}
   m_Layer: 0
   m_Name: Enemy
   m_TagString: Enemy
@@ -385,7 +386,7 @@ MonoBehaviour:
   reloadTime: 2
   infiniteAmmo: 0
   isReloading: 0
---- !u!114 &3972619707635490710
+--- !u!114 &7140524969475486815
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -401,6 +402,28 @@ MonoBehaviour:
   healTime: 2
   healCooldown: 10
   healThresholdPercent: 35
+  maxHeals: 2
+--- !u!114 &2003716159418889114
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1911469630259401626}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: af0571ea0958fe046abec909cee03f4a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  searchRadius: 12
+  samplePoints: 18
+  minPlayerDistance: 4
+  lineOfSightMask:
+    serializedVersion: 2
+    m_Bits: 1
+  losWeight: 10
+  distanceWeight: 1
+  flankBias: 0.5
 --- !u!1 &7305247438795223038
 GameObject:
   m_ObjectHideFlags: 0

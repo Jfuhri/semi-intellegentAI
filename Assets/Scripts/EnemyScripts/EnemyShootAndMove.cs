@@ -42,6 +42,12 @@ public class EnemyShootAndMove : MonoBehaviour
     private Health healthComponent;
     private SelfHealSystem selfHealSystem;
 
+    private CoverSystem coverSystem;
+
+    [Header("Debug Cover Test")]
+    public bool debugForceCoverKey = false;
+    public KeyCode forceCoverKey = KeyCode.C;
+
     void OnEnable() => GlobalEventManager.OnGunshot += HandleGunshot;
     void OnDisable() => GlobalEventManager.OnGunshot -= HandleGunshot;
 
@@ -58,6 +64,12 @@ public class EnemyShootAndMove : MonoBehaviour
 
         lastKnownTargetPosition = transform.position;
         SetNewPatrolPoint();
+        coverSystem = GetComponent<CoverSystem>();
+        
+        if (debugForceCoverKey && Input.GetKeyDown(forceCoverKey))
+        {
+            ForceSeekCover();
+        }
     }
 
     Transform FindTarget()
@@ -270,6 +282,29 @@ public class EnemyShootAndMove : MonoBehaviour
         {
             Quaternion lookRotation = Quaternion.LookRotation(direction);
             transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 10f);
+        }
+    }
+
+    public void ForceSeekCover()
+    {
+        if (coverSystem == null)
+        {
+            Debug.LogWarning($"{name}: No CoverSystem found!");
+            return;
+        }
+
+        if (coverSystem.TryGetCoverPoint(transform.position, out Vector3 coverPoint))
+        {
+            agent.isStopped = false;
+            agent.SetDestination(coverPoint);
+            isPatrolling = false;
+
+            Debug.DrawLine(transform.position, coverPoint, Color.green, 2f);
+            Debug.Log($"{name} forcing cover move -> {coverPoint}");
+        }
+        else
+        {
+            Debug.LogWarning($"{name}: No valid cover found!");
         }
     }
 
