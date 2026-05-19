@@ -1,6 +1,6 @@
 using UnityEngine;
 using UnityEngine.AI;
-using System.Collections.Generic;
+using System.Collections;
 
 [RequireComponent(typeof(ReloadSystem))]
 public class EnemyShootAndMove : MonoBehaviour
@@ -22,31 +22,30 @@ public class EnemyShootAndMove : MonoBehaviour
     public float hearingRange = 30f;
     public float biasIncreasePerShot = 0.25f;
     public float biasDecayRate = 0.1f;
-    private float patrolBiasWeight = 0f;
 
     [Header("Backup System")]
     public float allyBroadcastRadius = 20f;
 
-    [Header("Tactical Healing")]
-    public float healRequestThreshold = 40f;
-
-    private Transform target;
-    private NavMeshAgent agent;
-    private float nextFireTime;
-    private float patrolWaitTimer;
-    private Vector3 currentPatrolTarget;
-    private bool isPatrolling = true;
-    private Vector3 lastKnownTargetPosition;
-
-    private ReloadSystem reloadSystem;
-    private Health healthComponent;
-    private SelfHealSystem selfHealSystem;
-
-    private CoverSystem coverSystem;
-
     [Header("Debug Cover Test")]
     public bool debugForceCoverKey = false;
     public KeyCode forceCoverKey = KeyCode.C;
+
+    private float patrolBiasWeight = 0f;
+
+    private Transform target;
+    private NavMeshAgent agent;
+
+    private ReloadSystem reloadSystem;
+    private SelfHealSystem selfHealSystem;
+    private CoverSystem coverSystem;
+
+    private float nextFireTime;
+    private float patrolWaitTimer;
+
+    private Vector3 currentPatrolTarget;
+    private Vector3 lastKnownTargetPosition;
+
+    private bool isPatrolling = true;
 
     void OnEnable() => GlobalEventManager.OnGunshot += HandleGunshot;
     void OnDisable() => GlobalEventManager.OnGunshot -= HandleGunshot;
@@ -54,28 +53,26 @@ public class EnemyShootAndMove : MonoBehaviour
     void Start()
     {
         target = FindTarget();
+
         agent = GetComponent<NavMeshAgent>();
         reloadSystem = GetComponent<ReloadSystem>();
-        healthComponent = GetComponent<Health>();
         selfHealSystem = GetComponent<SelfHealSystem>();
+        coverSystem = GetComponent<CoverSystem>();
 
         if (reloadSystem == null)
             Debug.LogWarning($"{name} has no ReloadSystem attached!");
 
         lastKnownTargetPosition = transform.position;
+
         SetNewPatrolPoint();
-        coverSystem = GetComponent<CoverSystem>();
-        
-        if (debugForceCoverKey && Input.GetKeyDown(forceCoverKey))
-        {
-            ForceSeekCover();
-        }
     }
 
     Transform FindTarget()
     {
-        GameObject targetObj = GameObject.FindGameObjectWithTag("Player")
+        GameObject targetObj =
+            GameObject.FindGameObjectWithTag("Player")
             ?? GameObject.FindGameObjectWithTag("PlayerBot");
+
         return targetObj?.transform;
     }
 
@@ -86,36 +83,68 @@ public class EnemyShootAndMove : MonoBehaviour
 
     void Update()
     {
-        if (target == null) return;
+        if (target == null)
+            return;
 
-        patrolBiasWeight = Mathf.Max(0f, patrolBiasWeight - biasDecayRate * Time.deltaTime);
+        if (debugForceCoverKey && Input.GetKeyDown(forceCoverKey))
+        {
+            ForceSeekCover();
+        }
 
-        float distance = Vector3.Distance(transform.position, target.position);
+        patrolBiasWeight =
+            Mathf.Max(0f, patrolBiasWeight - biasDecayRate * Time.deltaTime);
+
+        float distance =
+            Vector3.Distance(transform.position, target.position);
 
         // =========================
-        // SELF HEAL INTEGRATION
+        // SELF HEALING (unchanged)
         // =========================
         if (selfHealSystem != null && selfHealSystem.ShouldHeal())
         {
             agent.isStopped = true;
 
-            if (!selfHealSystem.isActiveAndEnabled)
-                return;
-
             StartCoroutine(selfHealSystem.HealRoutine());
             return;
         }
 
-        if (distance <= shootingRange && IsInFieldOfView() && HasLineOfSight())
+        // =========================
+        // COVER OVERRIDE (NEW)
+        // =========================
+        if (coverSystem != null &&
+            coverSystem.seekCoverWhenVisible &&
+            IsInFieldOfView() &&
+            HasLineOfSight())
+        {
+            if (coverSystem.TryGetCoverPoint(transform.position, out Vector3 coverPoint))
+            {
+                agent.isStopped = false;
+                agent.SetDestination(coverPoint);
+                isPatrolling = false;
+
+                // IMPORTANT: skip combat while in cover mode
+                return;
+            }
+        }
+
+        // =========================
+        // CLOSE COMBAT
+        // =========================
+        if (distance <= shootingRange &&
+            IsInFieldOfView() &&
+            HasLineOfSight())
         {
             agent.isStopped = true;
+
             FaceTarget();
+
             lastKnownTargetPosition = target.position;
             patrolBiasWeight = 1f;
 
             BroadcastToNearbyAllies(lastKnownTargetPosition);
 
-            if (Time.time >= nextFireTime && reloadSystem != null && !reloadSystem.isReloading)
+            if (Time.time >= nextFireTime &&
+                !reloadSystem.isReloading)
             {
                 if (reloadSystem.TryConsumeAmmo())
                 {
@@ -124,11 +153,17 @@ public class EnemyShootAndMove : MonoBehaviour
                 }
             }
         }
+        // =========================
+        // CHASE TARGET
+        // =========================
         else if (IsInFieldOfView() && HasLineOfSight())
         {
             agent.isStopped = false;
+
             agent.SetDestination(target.position);
+
             lastKnownTargetPosition = target.position;
+
             patrolBiasWeight = 1f;
             isPatrolling = false;
 
@@ -140,27 +175,31 @@ public class EnemyShootAndMove : MonoBehaviour
         }
     }
 
-    // FIXED + SIMPLIFIED HIT RESPONSE
     public void OnHitByPlayer(Vector3 hitOrigin)
     {
         lastKnownTargetPosition = hitOrigin;
+
         patrolBiasWeight = 1f;
         isPatrolling = true;
 
         SetNewPatrolPoint();
+
         BroadcastToNearbyAllies(hitOrigin);
 
-        // trigger self heal logic indirectly (if low health system is active)
-        if (selfHealSystem != null && selfHealSystem.ShouldHeal())
+        // Emergency heal trigger
+        if (selfHealSystem != null &&
+            selfHealSystem.ShouldHeal())
         {
             StartCoroutine(selfHealSystem.HealRoutine());
         }
 
-        if (target != null && reloadSystem != null && !reloadSystem.isReloading)
+        if (target != null &&
+            !reloadSystem.isReloading &&
+            Time.time >= nextFireTime)
         {
             FaceTarget();
 
-            if (Time.time >= nextFireTime && reloadSystem.TryConsumeAmmo())
+            if (reloadSystem.TryConsumeAmmo())
             {
                 Shoot();
                 nextFireTime = Time.time + 1f / fireRate;
@@ -170,13 +209,17 @@ public class EnemyShootAndMove : MonoBehaviour
 
     void BroadcastToNearbyAllies(Vector3 targetPosition)
     {
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, allyBroadcastRadius);
+        Collider[] hitColliders =
+            Physics.OverlapSphere(transform.position, allyBroadcastRadius);
 
         foreach (var col in hitColliders)
         {
-            if (col.gameObject != gameObject && col.CompareTag("Enemy"))
+            if (col.gameObject != gameObject &&
+                col.CompareTag("Enemy"))
             {
-                EnemyShootAndMove ally = col.GetComponent<EnemyShootAndMove>();
+                EnemyShootAndMove ally =
+                    col.GetComponent<EnemyShootAndMove>();
+
                 if (ally != null)
                     ally.ReceiveBackupCall(targetPosition);
             }
@@ -186,26 +229,42 @@ public class EnemyShootAndMove : MonoBehaviour
     public void ReceiveBackupCall(Vector3 targetPosition)
     {
         lastKnownTargetPosition = targetPosition;
+
         patrolBiasWeight = 1f;
+
         isPatrolling = true;
+
         SetNewPatrolPoint();
     }
 
     bool HasLineOfSight()
     {
-        Vector3 direction = (target.position + Vector3.up) - firePoint.position;
+        Vector3 direction =
+            (target.position + Vector3.up) - firePoint.position;
 
-        if (Physics.Raycast(firePoint.position, direction.normalized, out RaycastHit hit, viewDistance, lineOfSightMask))
+        if (Physics.Raycast(
+            firePoint.position,
+            direction.normalized,
+            out RaycastHit hit,
+            viewDistance,
+            lineOfSightMask))
+        {
             return IsTargetTag(hit.transform.gameObject);
+        }
 
         return false;
     }
 
     bool IsInFieldOfView()
     {
-        Vector3 directionToTarget = target.position - transform.position;
-        float angle = Vector3.Angle(transform.forward, directionToTarget);
-        return angle <= viewAngle / 2f && directionToTarget.magnitude <= viewDistance;
+        Vector3 directionToTarget =
+            target.position - transform.position;
+
+        float angle =
+            Vector3.Angle(transform.forward, directionToTarget);
+
+        return angle <= viewAngle / 2f &&
+               directionToTarget.magnitude <= viewDistance;
     }
 
     void PatrolBehavior()
@@ -213,13 +272,16 @@ public class EnemyShootAndMove : MonoBehaviour
         if (!isPatrolling)
         {
             isPatrolling = true;
+
             patrolWaitTimer = 0f;
+
             SetNewPatrolPoint();
         }
 
         agent.isStopped = false;
 
-        if (!agent.pathPending && agent.remainingDistance < 1f)
+        if (!agent.pathPending &&
+            agent.remainingDistance < 1f)
         {
             patrolWaitTimer += Time.deltaTime;
 
@@ -233,13 +295,45 @@ public class EnemyShootAndMove : MonoBehaviour
 
     void SetNewPatrolPoint()
     {
-        Vector3 basePoint = Vector3.Lerp(transform.position, lastKnownTargetPosition, patrolBiasWeight);
-        Vector3 randomOffset = Random.insideUnitSphere * patrolRadius * (1f - patrolBiasWeight);
-        randomOffset.y = 0f;
+        Vector3 targetPoint;
 
-        Vector3 candidatePoint = basePoint + randomOffset;
+        RoomVolume[] rooms =
+            Object.FindObjectsByType<RoomVolume>(FindObjectsSortMode.None);
 
-        if (NavMesh.SamplePosition(candidatePoint, out NavMeshHit hit, patrolRadius, NavMesh.AllAreas))
+        RoomVolume currentRoom = null;
+
+        for (int i = 0; i < rooms.Length; i++)
+        {
+            if (rooms[i].ContainsPoint(transform.position))
+            {
+                currentRoom = rooms[i];
+                break;
+            }
+        }
+
+        if (currentRoom != null && RoomManager.Instance != null)
+        {
+            RoomManager.Instance.MarkRoomSeen(currentRoom);
+
+            targetPoint =
+                RoomManager.Instance.GetNextRoomTarget(transform.position);
+        }
+        else
+        {
+            Vector3 basePoint =
+                Vector3.Lerp(transform.position,
+                             lastKnownTargetPosition,
+                             patrolBiasWeight);
+
+            Vector3 randomOffset =
+                Random.insideUnitSphere * patrolRadius;
+
+            randomOffset.y = 0f;
+
+            targetPoint = basePoint + randomOffset;
+        }
+
+        if (NavMesh.SamplePosition(targetPoint, out NavMeshHit hit, patrolRadius, NavMesh.AllAreas))
         {
             currentPatrolTarget = hit.position;
             agent.SetDestination(currentPatrolTarget);
@@ -248,25 +342,40 @@ public class EnemyShootAndMove : MonoBehaviour
 
     void Shoot()
     {
-        if (bulletPrefab && firePoint)
-        {
-            Vector3 direction = (target.position - firePoint.position).normalized;
-            Quaternion lookRotation = Quaternion.LookRotation(direction);
+        if (bulletPrefab == null || firePoint == null)
+            return;
 
-            Instantiate(bulletPrefab, firePoint.position, lookRotation);
-            GlobalEventManager.RaiseGunshot(firePoint.position, this);
-        }
+        Vector3 direction =
+            (target.position - firePoint.position).normalized;
+
+        Quaternion lookRotation =
+            Quaternion.LookRotation(direction);
+
+        Instantiate(
+            bulletPrefab,
+            firePoint.position,
+            lookRotation);
+
+        GlobalEventManager.RaiseGunshot(
+            firePoint.position,
+            this);
     }
 
     void HandleGunshot(Vector3 gunshotPosition, Object source)
     {
-        if (source == this) return;
+        if (source == this)
+            return;
 
-        if (Vector3.Distance(transform.position, gunshotPosition) <= hearingRange)
+        if (Vector3.Distance(
+            transform.position,
+            gunshotPosition) <= hearingRange)
         {
             lastKnownTargetPosition = gunshotPosition;
+
             patrolBiasWeight += biasIncreasePerShot;
-            patrolBiasWeight = Mathf.Clamp01(patrolBiasWeight);
+
+            patrolBiasWeight =
+                Mathf.Clamp01(patrolBiasWeight);
 
             if (isPatrolling)
                 SetNewPatrolPoint();
@@ -275,47 +384,59 @@ public class EnemyShootAndMove : MonoBehaviour
 
     void FaceTarget()
     {
-        Vector3 direction = (target.position - transform.position).normalized;
+        Vector3 direction =
+            (target.position - transform.position).normalized;
+
         direction.y = 0f;
 
-        if (direction != Vector3.zero)
-        {
-            Quaternion lookRotation = Quaternion.LookRotation(direction);
-            transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 10f);
-        }
+        if (direction == Vector3.zero)
+            return;
+
+        Quaternion lookRotation =
+            Quaternion.LookRotation(direction);
+
+        transform.rotation =
+            Quaternion.Slerp(
+                transform.rotation,
+                lookRotation,
+                Time.deltaTime * 10f);
     }
 
     public void ForceSeekCover()
     {
         if (coverSystem == null)
-        {
-            Debug.LogWarning($"{name}: No CoverSystem found!");
             return;
-        }
 
-        if (coverSystem.TryGetCoverPoint(transform.position, out Vector3 coverPoint))
+        if (coverSystem.TryGetCoverPoint(
+            transform.position,
+            out Vector3 coverPoint))
         {
             agent.isStopped = false;
+
             agent.SetDestination(coverPoint);
+
             isPatrolling = false;
 
-            Debug.DrawLine(transform.position, coverPoint, Color.green, 2f);
-            Debug.Log($"{name} forcing cover move -> {coverPoint}");
-        }
-        else
-        {
-            Debug.LogWarning($"{name}: No valid cover found!");
+            Debug.DrawLine(
+                transform.position,
+                coverPoint,
+                Color.green,
+                2f);
         }
     }
 
-    // =========================
-    // GIZMOS (UNCHANGED)
-    // =========================
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.yellow;
-        Vector3 leftBoundary = Quaternion.Euler(0, -viewAngle / 2f, 0) * transform.forward;
-        Vector3 rightBoundary = Quaternion.Euler(0, viewAngle / 2f, 0) * transform.forward;
+
+        Vector3 leftBoundary =
+            Quaternion.Euler(0, -viewAngle / 2f, 0) *
+            transform.forward;
+
+        Vector3 rightBoundary =
+            Quaternion.Euler(0, viewAngle / 2f, 0) *
+            transform.forward;
+
         Gizmos.DrawRay(transform.position, leftBoundary * viewDistance);
         Gizmos.DrawRay(transform.position, rightBoundary * viewDistance);
 

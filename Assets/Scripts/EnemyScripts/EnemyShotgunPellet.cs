@@ -41,9 +41,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
 
     private CoverSystem coverSystem;
 
-    [Header("Debug Cover Test")]
-    public bool debugForceCoverKey = false;
-    public KeyCode forceCoverKey = KeyCode.C;
+    private RoomVolume currentRoom;
 
     void OnEnable() => GlobalEventManager.OnGunshot += HandleGunshot;
     void OnDisable() => GlobalEventManager.OnGunshot -= HandleGunshot;
@@ -63,12 +61,8 @@ public class EnemyShotgunAndMove : MonoBehaviour
 
         lastKnownTargetPosition = transform.position;
         SetNewPatrolPoint();
+
         coverSystem = GetComponent<CoverSystem>();
-        
-        if (debugForceCoverKey && Input.GetKeyDown(forceCoverKey))
-        {
-            ForceSeekCover();
-        }
     }
 
     bool IsTargetTag(GameObject obj)
@@ -84,6 +78,35 @@ public class EnemyShotgunAndMove : MonoBehaviour
 
         float distance = Vector3.Distance(transform.position, target.position);
 
+        // =========================
+        // COVER OVERRIDE CHECK
+        // =========================
+        if (coverSystem != null && coverSystem.seekCoverWhenVisible)
+        {
+            bool playerVisible = IsInFieldOfView() && HasLineOfSight();
+
+            if (playerVisible)
+            {
+                agent.isStopped = false;
+
+                if (Time.time >= nextFireTime + 999f)
+                {
+                    // effectively disables shooting (safe guard)
+                }
+
+                if (coverSystem.TryGetCoverPoint(transform.position, out Vector3 coverPoint))
+                {
+                    agent.SetDestination(coverPoint);
+                    isPatrolling = false;
+                }
+
+                return; // IMPORTANT: skip all combat logic
+            }
+        }
+
+        // =========================
+        // NORMAL COMBAT BEHAVIOR
+        // =========================
         if (distance <= shootingRange && IsInFieldOfView() && HasLineOfSight())
         {
             if (!isAlerted)
@@ -142,6 +165,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
         if (!agent.pathPending && agent.remainingDistance < 1f)
         {
             patrolWaitTimer += Time.deltaTime;
+
             if (patrolWaitTimer >= patrolWaitTime)
             {
                 SetNewPatrolPoint();
@@ -152,15 +176,30 @@ public class EnemyShotgunAndMove : MonoBehaviour
 
     void SetNewPatrolPoint()
     {
-        Vector3 basePoint = Vector3.Lerp(transform.position, lastKnownTargetPosition, patrolBiasWeight);
-        Vector3 randomOffset = Random.insideUnitSphere * patrolRadius * (1f - patrolBiasWeight);
-        randomOffset.y = 0f;
-
-        Vector3 candidate = basePoint + randomOffset;
-
-        if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, patrolRadius, NavMesh.AllAreas))
+        if (RoomManager.Instance != null)
         {
-            currentPatrolTarget = hit.position;
+            RoomVolume room = RoomManager.Instance.GetNextRoomForEnemy(transform.position);
+
+            if (room != null)
+            {
+                Vector3 point = room.GetRandomPointInside();
+
+                if (NavMesh.SamplePosition(point, out NavMeshHit hit, 3f, NavMesh.AllAreas))
+                {
+                    currentPatrolTarget = hit.position;
+                    agent.SetDestination(currentPatrolTarget);
+                    return;
+                }
+            }
+        }
+
+        // fallback (your current system)
+        Vector3 candidate = transform.position + Random.insideUnitSphere * patrolRadius;
+        candidate.y = 0;
+
+        if (NavMesh.SamplePosition(candidate, out NavMeshHit hit2, patrolRadius, NavMesh.AllAreas))
+        {
+            currentPatrolTarget = hit2.position;
             agent.SetDestination(currentPatrolTarget);
         }
     }
@@ -253,52 +292,43 @@ public class EnemyShotgunAndMove : MonoBehaviour
         }
     }
 
-    // ✅ FIXED + SAFE HIT RESPONSE
-    public void OnHitByPlayer(Vector3 hitDirection, string sourceTag = "Player")
+    public void OnHitByPlayer(Vector3 hitOrigin)
     {
-        if (!IsTargetTag(GameObject.FindWithTag(sourceTag))) return;
+        if (target == null) return;
 
-        Vector3 evade = transform.position + hitDirection.normalized * 5f;
+        lastKnownTargetPosition = hitOrigin;
 
-        if (NavMesh.SamplePosition(evade, out NavMeshHit hit, 5f, NavMesh.AllAreas))
-        {
-            agent.SetDestination(hit.position);
-            agent.isStopped = false;
-            isPatrolling = false;
-        }
+        isPatrolling = true;
+        patrolBiasWeight = 1f;
 
+        SetNewPatrolPoint();
+
+        // optional: alert nearby allies on hit
+        AlertNearbyAllies();
+
+        // small reactive shot (keeps behavior consistent with rifle AI)
         if (Time.time >= nextFireTime && reloadSystem != null && !reloadSystem.isReloading)
         {
             if (reloadSystem.TryConsumeAmmo())
             {
+                FaceTarget();
                 ShootShotgun();
                 nextFireTime = Time.time + 1f / fireRate;
             }
         }
     }
 
-    public void ForceSeekCover()
+    void OnTriggerEnter(Collider other)
     {
-        if (coverSystem == null)
-        {
-            Debug.LogWarning($"{name}: No CoverSystem found!");
-            return;
-        }
+        RoomVolume room = other.GetComponent<RoomVolume>();
 
-        if (coverSystem.TryGetCoverPoint(transform.position, out Vector3 coverPoint))
+        if (room != null)
         {
-            agent.isStopped = false;
-            agent.SetDestination(coverPoint);
-            isPatrolling = false;
-
-            Debug.DrawLine(transform.position, coverPoint, Color.green, 2f);
-            Debug.Log($"{name} forcing cover move -> {coverPoint}");
-        }
-        else
-        {
-            Debug.LogWarning($"{name}: No valid cover found!");
+            currentRoom = room;
+            room.MarkVisited(Time.time);
         }
     }
+
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.yellow;
