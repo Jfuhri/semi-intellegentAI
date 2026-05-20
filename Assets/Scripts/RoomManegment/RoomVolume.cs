@@ -2,9 +2,23 @@ using UnityEngine;
 
 public class RoomVolume : MonoBehaviour
 {
+    [Header("Room")]
     public Collider roomBounds;
 
+    [HideInInspector]
     public float lastVisitedTime = -999f;
+
+    [Header("Debug")]
+    public bool drawDebug = true;
+
+    [Header("Debug Timer Display")]
+    public bool showTimerLabel = true;
+    public Vector3 labelOffset = Vector3.up * 2f;
+
+    public float TimeSinceVisited()
+    {
+        return Time.time - lastVisitedTime;
+    }
 
     void Reset()
     {
@@ -16,13 +30,21 @@ public class RoomVolume : MonoBehaviour
         if (roomBounds == null)
             return transform.position;
 
-        Bounds b = roomBounds.bounds;
+        Bounds bounds = roomBounds.bounds;
 
         return new Vector3(
-            Random.Range(b.min.x, b.max.x),
+            Random.Range(bounds.min.x, bounds.max.x),
             transform.position.y,
-            Random.Range(b.min.z, b.max.z)
+            Random.Range(bounds.min.z, bounds.max.z)
         );
+    }
+
+    public bool ContainsPoint(Vector3 point)
+    {
+        if (roomBounds == null)
+            return false;
+
+        return roomBounds.bounds.Contains(point);
     }
 
     public void MarkVisited()
@@ -30,8 +52,44 @@ public class RoomVolume : MonoBehaviour
         lastVisitedTime = Time.time;
     }
 
-    public bool Contains(Vector3 point)
+    void OnDrawGizmos()
     {
-        return roomBounds != null && roomBounds.bounds.Contains(point);
+        if (!drawDebug || roomBounds == null)
+            return;
+
+        float timeSinceVisit =
+            Application.isPlaying
+            ? Time.time - lastVisitedTime
+            : 999f;
+
+        // Freshly checked = green
+        // Old unchecked = red
+
+        float normalized =
+            Mathf.Clamp01(timeSinceVisit / 20f);
+
+        Gizmos.color =
+            Color.Lerp(Color.green, Color.red, normalized);
+
+        Bounds bounds = roomBounds.bounds;
+
+        Gizmos.DrawWireCube(bounds.center, bounds.size);
+
+#if UNITY_EDITOR
+        if (showTimerLabel)
+        {
+            UnityEditor.Handles.color = Color.white;
+
+            string label =
+                Application.isPlaying
+                ? $"Checked: {timeSinceVisit:F1}s ago"
+                : "Room Timer";
+
+            UnityEditor.Handles.Label(
+                bounds.center + labelOffset,
+                label
+            );
+        }
+#endif
     }
 }

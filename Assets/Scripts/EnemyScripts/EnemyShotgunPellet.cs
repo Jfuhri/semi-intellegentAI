@@ -325,7 +325,7 @@ public class EnemyShotgunAndMove : MonoBehaviour
         if (room != null)
         {
             currentRoom = room;
-            room.MarkVisited(Time.time);
+            room.MarkVisited();
         }
     }
 

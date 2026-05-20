@@ -47,6 +47,7 @@ public class EnemyShootAndMove : MonoBehaviour
 
     private bool isPatrolling = true;
 
+
     void OnEnable() => GlobalEventManager.OnGunshot += HandleGunshot;
     void OnDisable() => GlobalEventManager.OnGunshot -= HandleGunshot;
 
@@ -293,37 +294,39 @@ public class EnemyShootAndMove : MonoBehaviour
         }
     }
 
+    private RoomVolume currentRoomTarget;
+    private bool hasMarkedRoomVisited;
+
     void SetNewPatrolPoint()
     {
         Vector3 targetPoint;
 
-        RoomVolume[] rooms =
-            Object.FindObjectsByType<RoomVolume>(FindObjectsSortMode.None);
+        RoomVolume targetRoom = null;
 
-        RoomVolume currentRoom = null;
-
-        for (int i = 0; i < rooms.Length; i++)
+        if (RoomManager.Instance != null)
         {
-            if (rooms[i].ContainsPoint(transform.position))
-            {
-                currentRoom = rooms[i];
-                break;
-            }
+            targetRoom =
+                RoomManager.Instance.GetNextRoomForEnemy(transform.position);
         }
 
-        if (currentRoom != null && RoomManager.Instance != null)
+        // =========================
+        // ROOM-BASED PATROL
+        // =========================
+        if (targetRoom != null)
         {
-            RoomManager.Instance.MarkRoomSeen(currentRoom);
+            targetRoom.MarkVisited();
 
-            targetPoint =
-                RoomManager.Instance.GetNextRoomTarget(transform.position);
+            targetPoint = targetRoom.GetRandomPointInside();
         }
         else
         {
+            // fallback old patrol logic
+
             Vector3 basePoint =
-                Vector3.Lerp(transform.position,
-                             lastKnownTargetPosition,
-                             patrolBiasWeight);
+                Vector3.Lerp(
+                    transform.position,
+                    lastKnownTargetPosition,
+                    patrolBiasWeight);
 
             Vector3 randomOffset =
                 Random.insideUnitSphere * patrolRadius;
@@ -333,9 +336,14 @@ public class EnemyShootAndMove : MonoBehaviour
             targetPoint = basePoint + randomOffset;
         }
 
-        if (NavMesh.SamplePosition(targetPoint, out NavMeshHit hit, patrolRadius, NavMesh.AllAreas))
+        if (NavMesh.SamplePosition(
+            targetPoint,
+            out NavMeshHit hit,
+            patrolRadius,
+            NavMesh.AllAreas))
         {
             currentPatrolTarget = hit.position;
+
             agent.SetDestination(currentPatrolTarget);
         }
     }

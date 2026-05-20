@@ -9,25 +9,37 @@ public class RoomManager : MonoBehaviour
     void Awake()
     {
         Instance = this;
+
+        rooms = Object.FindObjectsByType<RoomVolume>(
+            FindObjectsSortMode.None);
     }
 
-    void Start()
+    public RoomVolume[] GetRooms()
     {
-        rooms = Object.FindObjectsByType<RoomVolume>(FindObjectsSortMode.None);
+        return rooms;
     }
 
     public RoomVolume GetNextRoomForEnemy(Vector3 fromPosition)
     {
-        RoomVolume bestRoom = null;
-        float oldestTime = float.MaxValue;
-
-        foreach (var room in rooms)
+        if (rooms == null || rooms.Length == 0)
         {
-            float t = room.lastVisitedTime;
+            rooms = Object.FindObjectsByType<RoomVolume>(
+                FindObjectsSortMode.None);
+        }
 
-            if (t < oldestTime)
+        RoomVolume bestRoom = null;
+        float oldestVisitTime = -1f;
+
+        foreach (RoomVolume room in rooms)
+        {
+            if (room == null || room.roomBounds == null)
+                continue;
+
+            float timeSinceVisited = room.TimeSinceVisited();
+
+            if (timeSinceVisited > oldestVisitTime)
             {
-                oldestTime = t;
+                oldestVisitTime = timeSinceVisited;
                 bestRoom = room;
             }
         }
